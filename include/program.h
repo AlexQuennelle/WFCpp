@@ -1,6 +1,8 @@
 #pragma once
 
-#include "imgui.h"
+#include "generator.h"
+
+#include <imgui.h>
 
 /**
  * Class representing an instance of the program and encapsulating global state.
@@ -27,6 +29,8 @@ class Program
 	void Draw() const;
 
 	ImGuiIO* imguiIO;
+
+	Generator generator;
 };
 
 #ifdef __EMSCRIPTEN__

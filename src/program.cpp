@@ -9,7 +9,7 @@
 #include <emscripten/emscripten.h>
 #endif // !__EMSCRIPTEN__
 
-Program::Program()
+Program::Program() : generator(16)
 {
 	SetTextColor(INFO);
 	std::cout << "Initializing program\n";
@@ -18,7 +18,7 @@ Program::Program()
 	InitWindow(800, 800, NAME);
 	SetTargetFPS(60);
 	rlImGuiSetup(true);
-	this->imguiIO = &ImGui::GetIO();
+	this->imguiIO = &ImGui::GetIO(); // NOLINT
 
 	imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }
@@ -40,10 +40,6 @@ void Program::Update()
 	BeginDrawing();
 	rlImGuiBegin();
 
-	// The internal draw loops for Raylib and ImGui starts before the user
-	// defined draw loop to allow for debug visualizations.
-
-	// Draw loop start
 	this->Draw();
 
 	rlImGuiEnd();
@@ -56,8 +52,8 @@ void Program::Draw() const
 
 	// ImGui demo
 	bool open = true;
-	ImGuiWindowFlags flags{ImGuiWindowFlags_NoSavedSettings |
-						   ImGuiWindowFlags_AlwaysAutoResize};
+	ImGuiWindowFlags flags{ImGuiWindowFlags_NoSavedSettings
+						   | ImGuiWindowFlags_AlwaysAutoResize};
 	if (ImGui::Begin("ImGui Window", &open, flags))
 	{
 		ImGui::Text("Text.");
