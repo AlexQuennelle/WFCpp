@@ -1,14 +1,6 @@
-# Raylib Kickstart
-This template repository offers a nice starting point for a simple raylib
-project with a plug-and-play cmakelistsfile that will automatically detect new
-source and header files. After creating a new repository based on this one,
-you should go to line 28 in [CMakeLists.txt](CMakeLists.txt) and change the
-name of the cmake project from RalyibKickstart.
-
-The comment says to match the current folder(which in most cases will be the
-name of the repository) but it can really be anything. The reason for doing as
-the comment says is to allow the provided [build scripts](#how-to-build) to run
-the program after building in debug mode.
+# About
+This is an attempt at implementing the Wave Function Collapse algorithm for
+procedural generation.
 
 
 ## How To Build

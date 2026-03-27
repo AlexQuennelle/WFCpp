@@ -23,9 +23,8 @@ elseif(LINUX AND CONFIG_USE_ASAN)
     add_compile_options("-fsanitize=address")
 endif()
 
-# Change this to match the name of the current folder
 project(
-    RaylibKickstart
+    WFCpp
     LANGUAGES CXX C
     VERSION 0.0
 )
