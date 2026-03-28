@@ -1,33 +1,112 @@
 #include "generator.h"
 
+#include <algorithm>
 #include <csignal>
+#include <random>
 #include <ranges>
 
 namespace r = std::ranges;
 namespace rv = std::ranges::views;
 
 Cell::Cell(const std::vector<Tile>& init) : possibilities(init) { }
-auto Cell::GetEntropy() const -> uint64_t { return this->possibilities.size(); }
-
-Chunk::Chunk(const std::vector<Cell*> data) { }
-
-Generator::Generator(const int size,
-					 const int chunks) //:
-									   // grid(size * size, testTiles)
+void Cell::Collapse(std::mt19937& rand)
 {
-	const std::vector<Tile> testTiles = {
-		{.ID = 0,
-		 .col = {.r = 0, .g = 0, .b = 0, .a = 255},
-		 .adjacencies = {1}},
-		{.ID = 1,
-		 .col = {.r = 220, .g = 220, .b = 220, .a = 220},
-		 .adjacencies = {0, 2}},
-		{.ID = 2,
-		 .col = {.r = 255, .g = 255, .b = 255, .a = 255},
-		 .adjacencies = {1}},
-	};
-	this->grid = std::vector<Cell>(size * size, testTiles);
+	std::uniform_int_distribution<> distrib(0, this->GetEntropy() - 1);
+	possibilities = std::vector<Tile>(1, this->possibilities[distrib(rand)]);
+}
+auto Cell::GetEntropy() const -> uint64_t { return this->possibilities.size(); }
+auto Cell::GetColor() const -> Color
+{
+	if (this->possibilities.size() <= 1)
+		return this->possibilities[0].col;
 
+	Vector3 col{.x = 0.0f, .y = 0.0f, .z = 0.0f};
+	for (const auto& tile : this->possibilities)
+	{
+		auto tileCol{ColorToHSV(tile.col)};
+		col.x += tileCol.x;
+		col.y += tileCol.y;
+		col.z += tileCol.z;
+	}
+	col.x /= static_cast<float>(this->possibilities.size());
+	col.y /= static_cast<float>(this->possibilities.size());
+	col.z /= static_cast<float>(this->possibilities.size());
+
+	return ColorFromHSV(col.x, col.y, col.z);
+}
+
+CellRef::CellRef(Cell* cell) : cell(cell), newCell(*this->cell) { }
+void CellRef::Collapse(std::mt19937& rand) { this->newCell.Collapse(rand); }
+void CellRef::Reset() { newCell = *cell; }
+void CellRef::Apply() { *cell = newCell; }
+auto CellRef::operator->() -> Cell* { return this->cell; }
+
+Chunk::Chunk(const std::vector<Cell*>& data, const int size) : size(size)
+{
+	this->area = data
+				 | rv::transform([](auto cell) { return CellRef(cell); })
+				 | r::to<std::vector<CellRef>>();
+	for (auto x : rv::iota(0, size))
+	{
+		for (auto y : rv::iota(0, size))
+		{
+			auto& cell = *this->CellAt(x, y);
+			cell.N = this->CellAt(x, y - 1);
+			cell.W = this->CellAt(x - 1, y);
+			cell.S = this->CellAt(x, y + 1);
+			cell.E = this->CellAt(x + 1, y);
+			cell.NE = this->CellAt(x + 1, y - 1);
+			cell.NW = this->CellAt(x - 1, y - 1);
+			cell.SW = this->CellAt(x - 1, y + 1);
+			cell.SE = this->CellAt(x + 1, y + 1);
+		}
+	}
+}
+auto Chunk::Step(std::mt19937& rand) -> bool
+{
+	auto sortFunc = [](auto& a, auto& b) -> bool
+	{
+		return (*a)->GetEntropy() < (*b)->GetEntropy();
+	};
+	auto sorted
+		= this->area
+		  | rv::filter([](auto& cell) { return cell->GetEntropy() > 1; })
+		  | rv::transform([](auto& cell) { return &cell; })
+		  | r::to<std::vector<CellRef*>>();
+	r::sort(sorted, sortFunc);
+	auto GetLowest = [ref = (*sorted[0])->GetEntropy()](auto* cell) -> bool
+	{
+		return (*cell)->GetEntropy() == ref;
+	};
+	auto lowest
+		= sorted | rv::take_while(GetLowest) | r::to<std::vector<CellRef*>>();
+	std::uniform_int_distribution<> distrib(0, lowest.size());
+	CellRef& toCollapse = *lowest[distrib(rand)];
+	// CellRef& toCollapse = lowest[std::rand() % lowest.size()];
+
+	toCollapse.Collapse(rand);
+	toCollapse.Apply();
+
+	for (auto& cell : this->area)
+	{
+		cell.Apply();
+	}
+	return true;
+}
+auto Chunk::CellAt(const int x, const int y) -> CellRef*
+{
+	if (x < 0 || x >= this->size)
+		return nullptr;
+	if (y < 0 || y >= this->size)
+		return nullptr;
+
+	return &area[(x * this->size) + y];
+}
+
+Generator::Generator(const int size, const int chunks) :
+	grid(size * size, testTiles), size(size)
+{
+	gen = std::mt19937(rd());
 	int chunkSize = size; // TODO: Fix this when multithreading
 	int chunkStride = chunks / size;
 
@@ -41,6 +120,28 @@ Generator::Generator(const int size,
 		{
 			chunkData.push_back(&this->grid[startIndex + ((x * size) + y)]);
 		}
-		this->chunks.emplace_back(chunkData);
+		this->chunks.emplace_back(chunkData, chunkSize);
 	}
+}
+void Generator::Step()
+{
+	// TODO: Fix how chunks are invoked
+	for (auto chunk : this->chunks)
+	{
+		// TODO: Add conditions to check when chunk is done.
+		while (!chunk.Step(this->gen))
+			;
+	}
+}
+void Generator::ToTex()
+{
+	this->img
+		= {.data = nullptr, .width = 0, .height = 0, .mipmaps = 0, .format = 0};
+	this->img = GenImageColor(this->size, this->size, BLACK);
+	for (auto [x, y] : rv::cartesian_product(rv::iota(0, this->size),
+											 rv::iota(0, this->size)))
+	{
+		ImageDrawPixel(&this->img, x, y, this->grid[(x * size) + y].GetColor());
+	}
+	this->texture = LoadTextureFromImage(this->img);
 }

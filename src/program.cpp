@@ -20,6 +20,9 @@ Program::Program() : generator(16)
 	rlImGuiSetup(true);
 	this->imguiIO = &ImGui::GetIO(); // NOLINT
 
+	this->generator.Step();
+	this->generator.ToTex();
+
 	imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }
 
@@ -49,6 +52,9 @@ void Program::Update()
 void Program::Draw() const
 {
 	ClearBackground({.r = 100, .g = 149, .b = 237, .a = 255});
+
+	DrawTextureEx(generator.GetTexture(), {.x = 0.0f, .y = 0.0f}, 0.0f,
+				  800.0f / 16.0f, WHITE);
 
 	// ImGui demo
 	bool open = true;
