@@ -2,17 +2,26 @@
 
 #include <algorithm>
 #include <csignal>
+#include <print>
 #include <random>
 #include <ranges>
+#include <utility>
+
+static constexpr int MAXPROPAGATION{1000};
 
 namespace r = std::ranges;
 namespace rv = std::ranges::views;
 
 Cell::Cell(const std::vector<Tile>& init) : possibilities(init) { }
-void Cell::Collapse(std::mt19937& rand)
+auto Cell::Collapse(std::mt19937& rand) -> Tile
 {
-	std::uniform_int_distribution<> distrib(0, this->GetEntropy() - 1);
-	possibilities = std::vector<Tile>(1, this->possibilities[distrib(rand)]);
+	this->SetPossibilities(std::vector<Tile>(1, this->possibilities[0]));
+	// std::uniform_int_distribution<> distrib(0, this->GetEntropy() - 1);
+	// this->possibilities
+	// 	// = std::vector<Tile>(1, this->possibilities[distrib(rand)]);
+	// 	= std::vector<Tile>(1, this->possibilities[0]);
+
+	return this->possibilities[0];
 }
 auto Cell::GetEntropy() const -> uint64_t { return this->possibilities.size(); }
 auto Cell::GetColor() const -> Color
@@ -34,17 +43,104 @@ auto Cell::GetColor() const -> Color
 
 	return ColorFromHSV(col.x, col.y, col.z);
 }
+auto Cell::GetPossibilities() const -> std::vector<Tile>
+{
+	return this->possibilities;
+}
+void Cell::SetPossibilities(std::vector<Tile> newPossibilities)
+{
+	this->possibilities = std::move(newPossibilities);
+}
 
 CellRef::CellRef(Cell* cell) : cell(cell), newCell(*this->cell) { }
-void CellRef::Collapse(std::mt19937& rand) { this->newCell.Collapse(rand); }
+auto CellRef::Collapse(std::mt19937& rand) -> Tile
+{
+	std::println("collapsing cell ({}, {})", cell->id.x, cell->id.y);
+	return this->newCell.Collapse(rand);
+}
+auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
+{
+	std::print("({}, {}): ", cell->id.x, cell->id.y);
+	if (--depth == 0)
+	{
+		std::println("Depth reached");
+		return true;
+	}
+
+	auto initPossibilities = this->newCell.GetPossibilities();
+	auto GetOverlap = [&possibilities](Tile a) -> bool
+	{
+		auto pred = [a](auto b) -> bool
+		{
+			return a.ID == b;
+		};
+		return r::any_of(possibilities, pred);
+	};
+	auto newPossibilites = initPossibilities
+						   | rv::filter(GetOverlap)
+						   | r::to<std::vector<Tile>>();
+	this->newCell.SetPossibilities(newPossibilites);
+	std::print("{} ", this->newCell.GetPossibilities().size());
+	if (newPossibilites.size() == initPossibilities.size())
+	{
+		if (depth != MAXPROPAGATION - 1)
+		{
+			std::println("Cell didn't change");
+			return true;
+		}
+	}
+	if (newPossibilites.size() == 0)
+	{
+		std::println("Error state");
+		return false;
+	}
+
+	std::println("No issues");
+
+	std::vector<int> Nconstraints;
+	for (const auto& tile : newPossibilites)
+	{
+		Nconstraints.insert_range(Nconstraints.end(), tile.adjacencies);
+	}
+
+	bool successful{true};
+	// TODO: Add directional constraints
+	if (N != nullptr)
+		successful &= N->Propogate(Nconstraints, depth);
+	if (W != nullptr)
+		successful &= W->Propogate(Nconstraints, depth);
+	if (S != nullptr)
+		successful &= S->Propogate(Nconstraints, depth);
+	if (E != nullptr)
+		successful &= E->Propogate(Nconstraints, depth);
+	if (NW != nullptr)
+		successful &= NW->Propogate(Nconstraints, depth);
+	if (NE != nullptr)
+		successful &= NE->Propogate(Nconstraints, depth);
+	if (SE != nullptr)
+		successful &= SE->Propogate(Nconstraints, depth);
+	if (SW != nullptr)
+		successful &= SW->Propogate(Nconstraints, depth);
+	return successful;
+}
 void CellRef::Reset() { newCell = *cell; }
-void CellRef::Apply() { *cell = newCell; }
+void CellRef::Apply()
+{
+	std::println("Apply {}", this->newCell.GetPossibilities().size());
+	*cell = newCell;
+}
 auto CellRef::operator->() -> Cell* { return this->cell; }
 
 Chunk::Chunk(const std::vector<Cell*>& data, const int size) : size(size)
 {
 	this->area = data
-				 | rv::transform([](auto cell) { return CellRef(cell); })
+				 | rv::transform([](auto& cell) { return CellRef(cell); })
+				 | rv::transform(
+					 [](auto cell)
+					 {
+						 cell->original = false;
+						 return cell;
+					 })
 				 | r::to<std::vector<CellRef>>();
 	for (auto x : rv::iota(0, size))
 	{
@@ -81,11 +177,20 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 	auto lowest
 		= sorted | rv::take_while(GetLowest) | r::to<std::vector<CellRef*>>();
 	std::uniform_int_distribution<> distrib(0, lowest.size());
-	CellRef& toCollapse = *lowest[distrib(rand)];
-	// CellRef& toCollapse = lowest[std::rand() % lowest.size()];
+	// CellRef& toCollapse = *lowest[distrib(rand)];
+	CellRef& toCollapse = this->area[0];
 
-	toCollapse.Collapse(rand);
-	toCollapse.Apply();
+	auto selectedTile = toCollapse.Collapse(rand);
+
+	if (!toCollapse.Propogate({selectedTile.ID}, MAXPROPAGATION))
+	{
+		raise(SIGTRAP);
+		for (auto& cell : this->area)
+		{
+			cell.Reset();
+		}
+		return false;
+	}
 
 	for (auto& cell : this->area)
 	{
@@ -118,6 +223,8 @@ Generator::Generator(const int size, const int chunks) :
 		for (auto [x, y] : rv::cartesian_product(rv::iota(0, chunkSize),
 												 rv::iota(0, chunkSize)))
 		{
+			this->grid[startIndex + ((x * size) + y)].id
+				= {.x = static_cast<float>(x), .y = static_cast<float>(y)};
 			chunkData.push_back(&this->grid[startIndex + ((x * size) + y)]);
 		}
 		this->chunks.emplace_back(chunkData, chunkSize);

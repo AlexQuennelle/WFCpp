@@ -21,6 +21,7 @@ Program::Program() : generator(16)
 	this->imguiIO = &ImGui::GetIO(); // NOLINT
 
 	this->generator.Step();
+	// this->generator.Step();
 	this->generator.ToTex();
 
 	imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;

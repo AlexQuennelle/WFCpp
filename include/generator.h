@@ -1,6 +1,8 @@
 #pragma once
 
+#include <csignal>
 #include <cstdint>
+#include <print>
 #include <random>
 #include <raylib.h>
 #include <vector>
@@ -13,23 +15,44 @@ struct Tile
 };
 
 static const std::vector<Tile> testTiles = {
-	{.ID = 0, .col = {.r = 0, .g = 0, .b = 0, .a = 255}, .adjacencies = {1}},
+	{.ID = 0, .col = {.r = 0, .g = 0, .b = 0, .a = 255}, .adjacencies = {0, 1}},
 	{.ID = 1,
-	 .col = {.r = 220, .g = 220, .b = 220, .a = 220},
-	 .adjacencies = {0, 2}},
+	 .col = {.r = 120, .g = 120, .b = 120, .a = 255},
+	 .adjacencies = {0, 1, 2}},
 	{.ID = 2,
 	 .col = {.r = 255, .g = 255, .b = 255, .a = 255},
-	 .adjacencies = {1}},
+	 .adjacencies = {1, 2}},
 };
+// static const std::vector<Tile> testTiles = {
+// 	{.ID = 0, .col = {.r = 0, .g = 0, .b = 0, .a = 255}, .adjacencies = {0}},
+// 	{.ID = 1,
+// 	 .col = {.r = 255, .g = 255, .b = 255, .a = 255},
+// 	 .adjacencies = {1}},
+// };
 
 class Cell
 {
 	public:
 	Cell(const std::vector<Tile>& init);
 
-	void Collapse(std::mt19937& rand);
+	auto Collapse(std::mt19937& rand) -> Tile;
 	auto GetEntropy() const -> uint64_t;
 	auto GetColor() const -> Color;
+	auto GetPossibilities() const -> std::vector<Tile>;
+	void SetPossibilities(std::vector<Tile> newPossibilities);
+
+	Vector2 id;
+	bool original{true};
+
+	auto operator=(const Cell& other) -> Cell&
+	{
+		std::println("Assigning to cell ({}, {})", this->id.x, this->id.y);
+		std::println("{}", other.possibilities.size());
+		// raise(SIGTRAP);
+		possibilities = other.possibilities;
+		this->original = other.original;
+		return *this;
+	}
 
 	private:
 	std::vector<Tile> possibilities;
@@ -40,20 +63,21 @@ class CellRef
 	public:
 	CellRef(Cell* cell);
 
-	void Collapse(std::mt19937& rand);
+	auto Collapse(std::mt19937& rand) -> Tile;
+	auto Propogate(const std::vector<int> posibilities, int depth) -> bool;
 	void Reset();
 	void Apply();
 
 	auto operator->() -> Cell*;
 
-	CellRef* N;
-	CellRef* W;
-	CellRef* S;
-	CellRef* E;
-	CellRef* NE;
-	CellRef* NW;
-	CellRef* SW;
-	CellRef* SE;
+	CellRef* N{};
+	CellRef* W{};
+	CellRef* S{};
+	CellRef* E{};
+	CellRef* NE{};
+	CellRef* NW{};
+	CellRef* SW{};
+	CellRef* SE{};
 
 	private:
 	Cell* cell;
