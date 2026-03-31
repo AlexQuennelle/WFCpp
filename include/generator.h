@@ -33,6 +33,9 @@ static const std::vector<Tile> testTiles = {
 class Cell
 {
 	public:
+	Cell(const Cell&) = default;
+	Cell(Cell&&) = delete;
+	Cell& operator=(Cell&&) = delete;
 	Cell(const std::vector<Tile>& init);
 
 	auto Collapse(std::mt19937& rand) -> Tile;

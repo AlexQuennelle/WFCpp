@@ -15,11 +15,9 @@ namespace rv = std::ranges::views;
 Cell::Cell(const std::vector<Tile>& init) : possibilities(init) { }
 auto Cell::Collapse(std::mt19937& rand) -> Tile
 {
-	this->SetPossibilities(std::vector<Tile>(1, this->possibilities[0]));
-	// std::uniform_int_distribution<> distrib(0, this->GetEntropy() - 1);
-	// this->possibilities
-	// 	// = std::vector<Tile>(1, this->possibilities[distrib(rand)]);
-	// 	= std::vector<Tile>(1, this->possibilities[0]);
+	std::uniform_int_distribution<> distrib(0, this->GetEntropy() - 1);
+	this->possibilities
+		= std::vector<Tile>(1, this->possibilities[distrib(rand)]);
 
 	return this->possibilities[0];
 }
@@ -49,6 +47,7 @@ auto Cell::GetPossibilities() const -> std::vector<Tile>
 }
 void Cell::SetPossibilities(std::vector<Tile> newPossibilities)
 {
+	this->original = false;
 	this->possibilities = std::move(newPossibilities);
 }
 
@@ -135,12 +134,6 @@ Chunk::Chunk(const std::vector<Cell*>& data, const int size) : size(size)
 {
 	this->area = data
 				 | rv::transform([](auto& cell) { return CellRef(cell); })
-				 | rv::transform(
-					 [](auto cell)
-					 {
-						 cell->original = false;
-						 return cell;
-					 })
 				 | r::to<std::vector<CellRef>>();
 	for (auto x : rv::iota(0, size))
 	{
@@ -176,15 +169,13 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 	};
 	auto lowest
 		= sorted | rv::take_while(GetLowest) | r::to<std::vector<CellRef*>>();
-	std::uniform_int_distribution<> distrib(0, lowest.size());
-	// CellRef& toCollapse = *lowest[distrib(rand)];
-	CellRef& toCollapse = this->area[0];
+	std::uniform_int_distribution<> distrib(0, lowest.size() - 1);
+	CellRef& toCollapse = *lowest[distrib(rand)];
 
 	auto selectedTile = toCollapse.Collapse(rand);
 
 	if (!toCollapse.Propogate({selectedTile.ID}, MAXPROPAGATION))
 	{
-		raise(SIGTRAP);
 		for (auto& cell : this->area)
 		{
 			cell.Reset();
@@ -233,7 +224,7 @@ Generator::Generator(const int size, const int chunks) :
 void Generator::Step()
 {
 	// TODO: Fix how chunks are invoked
-	for (auto chunk : this->chunks)
+	for (auto& chunk : this->chunks)
 	{
 		// TODO: Add conditions to check when chunk is done.
 		while (!chunk.Step(this->gen))
