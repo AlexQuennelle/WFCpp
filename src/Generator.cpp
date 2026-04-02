@@ -47,22 +47,18 @@ auto Cell::GetPossibilities() const -> std::vector<Tile>
 }
 void Cell::SetPossibilities(std::vector<Tile> newPossibilities)
 {
-	this->original = false;
 	this->possibilities = std::move(newPossibilities);
 }
 
 CellRef::CellRef(Cell* cell) : cell(cell), newCell(*this->cell) { }
 auto CellRef::Collapse(std::mt19937& rand) -> Tile
 {
-	std::println("collapsing cell ({}, {})", cell->id.x, cell->id.y);
 	return this->newCell.Collapse(rand);
 }
 auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
 {
-	std::print("({}, {}): ", cell->id.x, cell->id.y);
 	if (--depth == 0)
 	{
-		std::println("Depth reached");
 		return true;
 	}
 
@@ -79,12 +75,10 @@ auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
 						   | rv::filter(GetOverlap)
 						   | r::to<std::vector<Tile>>();
 	this->newCell.SetPossibilities(newPossibilites);
-	std::print("{} ", this->newCell.GetPossibilities().size());
 	if (newPossibilites.size() == initPossibilities.size())
 	{
 		if (depth != MAXPROPAGATION - 1)
 		{
-			std::println("Cell didn't change");
 			return true;
 		}
 	}
@@ -94,40 +88,47 @@ auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
 		return false;
 	}
 
-	std::println("No issues");
-
 	std::vector<int> Nconstraints;
+	std::vector<int> Sconstraints;
+	std::vector<int> Econstraints;
+	std::vector<int> Wconstraints;
+	std::vector<int> NWconstraints;
+	std::vector<int> SWconstraints;
+	std::vector<int> NEconstraints;
+	std::vector<int> SEconstraints;
 	for (const auto& tile : newPossibilites)
 	{
-		Nconstraints.insert_range(Nconstraints.end(), tile.adjacencies);
+		Nconstraints.insert_range(Nconstraints.end(), tile.N);
+		Sconstraints.insert_range(Sconstraints.end(), tile.S);
+		Econstraints.insert_range(Econstraints.end(), tile.E);
+		Wconstraints.insert_range(Wconstraints.end(), tile.W);
+		NWconstraints.insert_range(NWconstraints.end(), tile.NW);
+		SWconstraints.insert_range(SWconstraints.end(), tile.SW);
+		SEconstraints.insert_range(SEconstraints.end(), tile.SE);
+		NEconstraints.insert_range(NEconstraints.end(), tile.NE);
 	}
 
 	bool successful{true};
-	// TODO: Add directional constraints
 	if (N != nullptr)
 		successful &= N->Propogate(Nconstraints, depth);
 	if (W != nullptr)
-		successful &= W->Propogate(Nconstraints, depth);
+		successful &= W->Propogate(Wconstraints, depth);
 	if (S != nullptr)
-		successful &= S->Propogate(Nconstraints, depth);
+		successful &= S->Propogate(Sconstraints, depth);
 	if (E != nullptr)
-		successful &= E->Propogate(Nconstraints, depth);
+		successful &= E->Propogate(Econstraints, depth);
 	if (NW != nullptr)
-		successful &= NW->Propogate(Nconstraints, depth);
+		successful &= NW->Propogate(NWconstraints, depth);
 	if (NE != nullptr)
-		successful &= NE->Propogate(Nconstraints, depth);
+		successful &= NE->Propogate(NEconstraints, depth);
 	if (SE != nullptr)
-		successful &= SE->Propogate(Nconstraints, depth);
+		successful &= SE->Propogate(SEconstraints, depth);
 	if (SW != nullptr)
-		successful &= SW->Propogate(Nconstraints, depth);
+		successful &= SW->Propogate(SWconstraints, depth);
 	return successful;
 }
 void CellRef::Reset() { newCell = *cell; }
-void CellRef::Apply()
-{
-	std::println("Apply {}", this->newCell.GetPossibilities().size());
-	*cell = newCell;
-}
+void CellRef::Apply() { *cell = newCell; }
 auto CellRef::operator->() -> Cell* { return this->cell; }
 
 Chunk::Chunk(const std::vector<Cell*>& data, const int size) : size(size)
@@ -162,6 +163,8 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 		  | rv::filter([](auto& cell) { return cell->GetEntropy() > 1; })
 		  | rv::transform([](auto& cell) { return &cell; })
 		  | r::to<std::vector<CellRef*>>();
+	if (sorted.size() == 0)
+		return true;
 	r::sort(sorted, sortFunc);
 	auto GetLowest = [ref = (*sorted[0])->GetEntropy()](auto* cell) -> bool
 	{
@@ -242,4 +245,13 @@ void Generator::ToTex()
 		ImageDrawPixel(&this->img, x, y, this->grid[(x * size) + y].GetColor());
 	}
 	this->texture = LoadTextureFromImage(this->img);
+}
+void Generator::UpdateTex()
+{
+	for (auto [x, y] : rv::cartesian_product(rv::iota(0, this->size),
+											 rv::iota(0, this->size)))
+	{
+		ImageDrawPixel(&this->img, x, y, this->grid[(x * size) + y].GetColor());
+	}
+	UpdateTexture(this->texture, this->img.data);
 }

@@ -16,7 +16,7 @@ Program::Program() : generator(16)
 	ClearStyles();
 
 	InitWindow(800, 800, NAME);
-	SetTargetFPS(60);
+	// SetTargetFPS(60);
 	rlImGuiSetup(true);
 	this->imguiIO = &ImGui::GetIO(); // NOLINT
 
@@ -43,7 +43,7 @@ void Program::Update()
 	rlImGuiBegin();
 
 	this->generator.Step();
-	this->generator.ToTex();
+	this->generator.UpdateTex();
 	this->Draw();
 
 	rlImGuiEnd();
