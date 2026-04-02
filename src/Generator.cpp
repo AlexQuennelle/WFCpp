@@ -1,7 +1,6 @@
 #include "generator.h"
 
 #include <algorithm>
-#include <csignal>
 #include <print>
 #include <random>
 #include <ranges>
