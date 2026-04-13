@@ -1,6 +1,7 @@
 #include "generator.h"
 
 #include <algorithm>
+#include <csignal>
 #include <print>
 #include <random>
 #include <ranges>
@@ -201,23 +202,34 @@ auto Chunk::CellAt(const int x, const int y) -> CellRef*
 	return &area[(x * this->size) + y];
 }
 
-Generator::Generator(const int size, const int chunks) :
+Generator::Generator(const int size, const int chunkCount) :
 	grid(size * size, testTiles), size(size)
 {
 	gen = std::mt19937(rd());
-	int chunkSize = size; // TODO: Fix this when multithreading
-	int chunkStride = chunks / size;
+	int chunkSize = (size / chunkCount) + (chunkCount - 1);
+	int chunkStride = (size / chunkCount) - 1;
 
-	for (auto [xc, yc] :
-		 rv::cartesian_product(rv::iota(0, chunks), rv::iota(0, chunks)))
+	for (auto [xc, yc] : rv::cartesian_product(rv::iota(0, chunkCount),
+											   rv::iota(0, chunkCount)))
 	{
 		std::vector<Cell*> chunkData;
 		int startIndex = ((xc * chunkStride) * size) + (yc * chunkStride);
 		for (auto [x, y] : rv::cartesian_product(rv::iota(0, chunkSize),
 												 rv::iota(0, chunkSize)))
 		{
-			this->grid[startIndex + ((x * size) + y)].id
-				= {.x = static_cast<float>(x), .y = static_cast<float>(y)};
+			// if ((x + (xc * chunkStride) >= size)
+			// 	|| (y + (yc * chunkStride) >= size))
+			// {
+			// 	chunkData.push_back(nullptr);
+			// 	continue;
+			// }
+			bool isInit
+				= (this->grid[startIndex + ((x * size) + y)].id.x < 1.0f)
+				  && (this->grid[startIndex + ((x * size) + y)].id.y < 1.0f);
+			if (isInit)
+				this->grid[startIndex + ((x * size) + y)].id
+					= {.x = static_cast<float>(x + (xc * chunkStride)),
+					   .y = static_cast<float>(y + (yc * chunkStride))};
 			chunkData.push_back(&this->grid[startIndex + ((x * size) + y)]);
 		}
 		this->chunks.emplace_back(chunkData, chunkSize);
@@ -225,13 +237,15 @@ Generator::Generator(const int size, const int chunks) :
 }
 void Generator::Step()
 {
+	while (!this->chunks[0].Step(this->gen))
+		;
 	// TODO: Fix how chunks are invoked
-	for (auto& chunk : this->chunks)
-	{
-		// TODO: Add conditions to check when chunk is done.
-		while (!chunk.Step(this->gen))
-			;
-	}
+	// for (auto& chunk : this->chunks)
+	// {
+	// 	// TODO: Add conditions to check when chunk is done.
+	// 	while (!chunk.Step(this->gen))
+	// 		;
+	// }
 }
 void Generator::ToTex()
 {
@@ -254,3 +268,8 @@ void Generator::UpdateTex()
 	}
 	UpdateTexture(this->texture, this->img.data);
 }
+auto Generator::GetTexture() const -> Texture2D { return this->texture; }
+auto Generator::GetSize() const -> float
+{
+	return static_cast<float>(this->size);
+};

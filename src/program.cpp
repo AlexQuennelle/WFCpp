@@ -9,7 +9,7 @@
 #include <emscripten/emscripten.h>
 #endif // !__EMSCRIPTEN__
 
-Program::Program() : generator(16)
+Program::Program() : generator(64, 4)
 {
 	SetTextColor(INFO);
 	std::cout << "Initializing program\n";
@@ -55,7 +55,7 @@ void Program::Draw() const
 	ClearBackground({.r = 100, .g = 149, .b = 237, .a = 255});
 
 	DrawTextureEx(generator.GetTexture(), {.x = 0.0f, .y = 0.0f}, 0.0f,
-				  800.0f / 16.0f, WHITE);
+				  800.0f / generator.GetSize(), WHITE);
 
 	// ImGui demo
 	bool open = true;

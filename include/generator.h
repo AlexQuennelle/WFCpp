@@ -72,7 +72,8 @@ class Generator
 	void Step();
 	void ToTex();
 	void UpdateTex();
-	auto GetTexture() const -> Texture2D { return this->texture; };
+	auto GetTexture() const -> Texture2D;
+	auto GetSize() const -> float;
 
 	private:
 	std::random_device rd;
