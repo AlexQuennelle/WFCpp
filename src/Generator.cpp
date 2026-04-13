@@ -19,6 +19,7 @@ auto Cell::Collapse(std::mt19937& rand) -> Tile
 	this->possibilities
 		= std::vector<Tile>(1, this->possibilities[distrib(rand)]);
 
+	this->isDone = true;
 	return this->possibilities[0];
 }
 auto Cell::GetEntropy() const -> uint64_t { return this->possibilities.size(); }
@@ -160,11 +161,15 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 	};
 	auto sorted
 		= this->area
-		  | rv::filter([](auto& cell) { return cell->GetEntropy() > 1; })
+		  | rv::filter([](auto& cell) { return !cell->isDone; })
+		  // | rv::filter([](auto& cell) { return cell->GetEntropy() > 1; })
 		  | rv::transform([](auto& cell) { return &cell; })
 		  | r::to<std::vector<CellRef*>>();
 	if (sorted.size() == 0)
+	{
+		this->isDone = true;
 		return true;
+	}
 	r::sort(sorted, sortFunc);
 	auto GetLowest = [ref = (*sorted[0])->GetEntropy()](auto* cell) -> bool
 	{
@@ -205,7 +210,7 @@ auto Chunk::CellAt(const int x, const int y) -> CellRef*
 Generator::Generator(const int size, const int chunkCount) :
 	grid(size * size, testTiles), size(size)
 {
-	gen = std::mt19937(rd());
+	this->gen = std::mt19937(rd());
 	int chunkSize = (size / chunkCount) + (chunkCount - 1);
 	int chunkStride = (size / chunkCount) - 1;
 

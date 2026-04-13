@@ -19,6 +19,7 @@ class Cell
 	void SetPossibilities(std::vector<Tile> newPossibilities);
 
 	Vector2 id;
+	bool isDone{false};
 
 	private:
 	std::vector<Tile> possibilities;
@@ -62,6 +63,11 @@ class Chunk
 
 	int size;
 	std::vector<CellRef> area;
+	bool isDone{false};
+};
+
+class ChunkPtr
+{
 };
 
 class Generator
