@@ -207,6 +207,10 @@ auto Chunk::CellAt(const int x, const int y) -> CellRef*
 	return &area[(x * this->size) + y];
 }
 
+void ChunkPtr::Next() { index++; };
+auto ChunkPtr::operator->() -> Chunk* { return &this->chunks[this->index]; }
+uint8_t ChunkPtr::index = 0;
+
 Generator::Generator(const int size, const int chunkCount) :
 	grid(size * size, testTiles), size(size)
 {
@@ -222,12 +226,6 @@ Generator::Generator(const int size, const int chunkCount) :
 		for (auto [x, y] : rv::cartesian_product(rv::iota(0, chunkSize),
 												 rv::iota(0, chunkSize)))
 		{
-			// if ((x + (xc * chunkStride) >= size)
-			// 	|| (y + (yc * chunkStride) >= size))
-			// {
-			// 	chunkData.push_back(nullptr);
-			// 	continue;
-			// }
 			bool isInit
 				= (this->grid[startIndex + ((x * size) + y)].id.x < 1.0f)
 				  && (this->grid[startIndex + ((x * size) + y)].id.y < 1.0f);

@@ -2,6 +2,7 @@
 
 #include "tile.h"
 
+#include <array>
 #include <cstdint>
 #include <random>
 #include <raylib.h>
@@ -68,6 +69,15 @@ class Chunk
 
 class ChunkPtr
 {
+	public:
+	static void Next();
+
+	auto operator->() -> Chunk*;
+
+	private:
+	std::array<Chunk, 4> chunks;
+
+	static uint8_t index;
 };
 
 class Generator
