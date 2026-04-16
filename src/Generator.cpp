@@ -1,10 +1,10 @@
 #include "generator.h"
 
 #include <algorithm>
-#include <csignal>
-#include <print>
+#include <barrier>
 #include <random>
 #include <ranges>
+#include <thread>
 #include <utility>
 
 static constexpr int MAXPROPAGATION{1000};
@@ -51,12 +51,12 @@ void Cell::SetPossibilities(std::vector<Tile> newPossibilities)
 	this->possibilities = std::move(newPossibilities);
 }
 
-CellRef::CellRef(Cell* cell) : cell(cell), newCell(*this->cell) { }
-auto CellRef::Collapse(std::mt19937& rand) -> Tile
+CellPtr::CellPtr(Cell* cell) : cell(cell), newCell(*this->cell) { }
+auto CellPtr::Collapse(std::mt19937& rand) -> Tile
 {
 	return this->newCell.Collapse(rand);
 }
-auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
+auto CellPtr::Propagate(const std::vector<int> possibilities, int depth) -> bool
 {
 	if (--depth == 0)
 	{
@@ -85,7 +85,6 @@ auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
 	}
 	if (newPossibilites.size() == 0)
 	{
-		std::println("Error state");
 		return false;
 	}
 
@@ -111,32 +110,32 @@ auto CellRef::Propogate(const std::vector<int> possibilities, int depth) -> bool
 
 	bool successful{true};
 	if (N != nullptr)
-		successful &= N->Propogate(Nconstraints, depth);
+		successful &= N->Propagate(Nconstraints, depth);
 	if (W != nullptr)
-		successful &= W->Propogate(Wconstraints, depth);
+		successful &= W->Propagate(Wconstraints, depth);
 	if (S != nullptr)
-		successful &= S->Propogate(Sconstraints, depth);
+		successful &= S->Propagate(Sconstraints, depth);
 	if (E != nullptr)
-		successful &= E->Propogate(Econstraints, depth);
+		successful &= E->Propagate(Econstraints, depth);
 	if (NW != nullptr)
-		successful &= NW->Propogate(NWconstraints, depth);
+		successful &= NW->Propagate(NWconstraints, depth);
 	if (NE != nullptr)
-		successful &= NE->Propogate(NEconstraints, depth);
+		successful &= NE->Propagate(NEconstraints, depth);
 	if (SE != nullptr)
-		successful &= SE->Propogate(SEconstraints, depth);
+		successful &= SE->Propagate(SEconstraints, depth);
 	if (SW != nullptr)
-		successful &= SW->Propogate(SWconstraints, depth);
+		successful &= SW->Propagate(SWconstraints, depth);
 	return successful;
 }
-void CellRef::Reset() { newCell = *cell; }
-void CellRef::Apply() { *cell = newCell; }
-auto CellRef::operator->() -> Cell* { return this->cell; }
+void CellPtr::Reset() { newCell = *cell; }
+void CellPtr::Apply() { *cell = newCell; }
+auto CellPtr::operator->() -> Cell* { return this->cell; }
 
 Chunk::Chunk(const std::vector<Cell*>& data, const int size) : size(size)
 {
-	this->area = data
-				 | rv::transform([](auto& cell) { return CellRef(cell); })
-				 | r::to<std::vector<CellRef>>();
+	this->area = data // NOLINTNEXTLINE
+				 | rv::transform([](auto& cell) { return CellPtr(cell); })
+				 | r::to<std::vector<CellPtr>>();
 	for (auto x : rv::iota(0, size))
 	{
 		for (auto y : rv::iota(0, size))
@@ -153,6 +152,25 @@ Chunk::Chunk(const std::vector<Cell*>& data, const int size) : size(size)
 		}
 	}
 }
+void Chunk::Reset()
+{
+	for (auto& cell : this->area)
+	{
+		cell.Reset();
+	}
+	std::random_device rd{}; // NOLINT
+	std::mt19937 rand{rd()};
+	// Collapse any cells that are already collapsed to properly propagate
+	// changes made by adjacent chunks
+	for (auto& cell : this->area)
+	{
+		if (cell->GetEntropy() == 1)
+		{
+			cell->Collapse(rand);
+		}
+	}
+}
+
 auto Chunk::Step(std::mt19937& rand) -> bool
 {
 	auto sortFunc = [](auto& a, auto& b) -> bool
@@ -161,10 +179,9 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 	};
 	auto sorted
 		= this->area
-		  | rv::filter([](auto& cell) { return !cell->isDone; })
-		  // | rv::filter([](auto& cell) { return cell->GetEntropy() > 1; })
-		  | rv::transform([](auto& cell) { return &cell; })
-		  | r::to<std::vector<CellRef*>>();
+		  | rv::filter([](auto& cell) { return !cell->isDone; }) // NOLINT
+		  | rv::transform([](auto& cell) { return &cell; })		 // NOLINT
+		  | r::to<std::vector<CellPtr*>>();
 	if (sorted.size() == 0)
 	{
 		this->isDone = true;
@@ -176,13 +193,13 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 		return (*cell)->GetEntropy() == ref;
 	};
 	auto lowest
-		= sorted | rv::take_while(GetLowest) | r::to<std::vector<CellRef*>>();
+		= sorted | rv::take_while(GetLowest) | r::to<std::vector<CellPtr*>>();
 	std::uniform_int_distribution<> distrib(0, lowest.size() - 1);
-	CellRef& toCollapse = *lowest[distrib(rand)];
+	CellPtr& toCollapse = *lowest[distrib(rand)];
 
 	auto selectedTile = toCollapse.Collapse(rand);
 
-	if (!toCollapse.Propogate({selectedTile.ID}, MAXPROPAGATION))
+	if (!toCollapse.Propagate({selectedTile.ID}, MAXPROPAGATION))
 	{
 		for (auto& cell : this->area)
 		{
@@ -197,7 +214,9 @@ auto Chunk::Step(std::mt19937& rand) -> bool
 	}
 	return true;
 }
-auto Chunk::CellAt(const int x, const int y) -> CellRef*
+auto Chunk::CheckDone() const -> bool { return this->isDone; }
+
+auto Chunk::CellAt(const int x, const int y) -> CellPtr*
 {
 	if (x < 0 || x >= this->size)
 		return nullptr;
@@ -207,7 +226,12 @@ auto Chunk::CellAt(const int x, const int y) -> CellRef*
 	return &area[(x * this->size) + y];
 }
 
-void ChunkPtr::Next() { index++; };
+ChunkPtr::ChunkPtr(std::array<Chunk, 4> chunks) : chunks(std::move(chunks)) { }
+auto ChunkPtr::Next() -> bool
+{
+	index++;
+	return index >= 4;
+};
 auto ChunkPtr::operator->() -> Chunk* { return &this->chunks[this->index]; }
 uint8_t ChunkPtr::index = 0;
 
@@ -218,37 +242,79 @@ Generator::Generator(const int size, const int chunkCount) :
 	int chunkSize = (size / chunkCount) + (chunkCount - 1);
 	int chunkStride = (size / chunkCount) - 1;
 
-	for (auto [xc, yc] : rv::cartesian_product(rv::iota(0, chunkCount),
-											   rv::iota(0, chunkCount)))
+	for (auto [xc, yc] : rv::cartesian_product(rv::iota(0, chunkCount / 2),
+											   rv::iota(0, chunkCount / 2)))
 	{
-		std::vector<Cell*> chunkData;
-		int startIndex = ((xc * chunkStride) * size) + (yc * chunkStride);
+		xc *= 2;
+		yc *= 2;
+		std::vector<Cell*> chunk1;
+		std::vector<Cell*> chunk2;
+		std::vector<Cell*> chunk3;
+		std::vector<Cell*> chunk4;
+		int start1 = ((xc * chunkStride) * size) + (yc * chunkStride);
+		int start2 = (((xc + 1) * chunkStride) * size) + (yc * chunkStride);
+		int start3 = ((xc * chunkStride) * size) + ((yc + 1) * chunkStride);
+		int start4
+			= (((xc + 1) * chunkStride) * size) + ((yc + 1) * chunkStride);
 		for (auto [x, y] : rv::cartesian_product(rv::iota(0, chunkSize),
 												 rv::iota(0, chunkSize)))
 		{
 			bool isInit
-				= (this->grid[startIndex + ((x * size) + y)].id.x < 1.0f)
-				  && (this->grid[startIndex + ((x * size) + y)].id.y < 1.0f);
+				= (this->grid[start1 + ((x * size) + y)].id.x < 1.0f)
+				  && (this->grid[start1 + ((x * size) + y)].id.y < 1.0f);
 			if (isInit)
-				this->grid[startIndex + ((x * size) + y)].id
+				this->grid[start1 + ((x * size) + y)].id
 					= {.x = static_cast<float>(x + (xc * chunkStride)),
 					   .y = static_cast<float>(y + (yc * chunkStride))};
-			chunkData.push_back(&this->grid[startIndex + ((x * size) + y)]);
+			chunk1.push_back(&this->grid[start1 + ((x * size) + y)]);
+			chunk2.push_back(&this->grid[start2 + ((x * size) + y)]);
+			chunk3.push_back(&this->grid[start3 + ((x * size) + y)]);
+			chunk4.push_back(&this->grid[start4 + ((x * size) + y)]);
 		}
-		this->chunks.emplace_back(chunkData, chunkSize);
+		this->ptrs.push_back(ChunkPtr({{{chunk1, chunkSize},
+										{chunk2, chunkSize},
+										{chunk3, chunkSize},
+										{chunk4, chunkSize}}}));
 	}
 }
-void Generator::Step()
+void Generator::Run()
 {
-	while (!this->chunks[0].Step(this->gen))
-		;
-	// TODO: Fix how chunks are invoked
-	// for (auto& chunk : this->chunks)
-	// {
-	// 	// TODO: Add conditions to check when chunk is done.
-	// 	while (!chunk.Step(this->gen))
-	// 		;
-	// }
+	bool done{false};
+	auto onSync = [&done]() noexcept -> void
+	{
+		done = ChunkPtr::Next();
+	};
+	std::barrier syncPoint(this->ptrs.size(), onSync);
+	auto task = [&done, this, &syncPoint](ChunkPtr* ptr) -> void
+	{
+		while (!done)
+		{
+			(*ptr)->Reset();
+			while (true)
+			{
+				while (!(*ptr)->Step(this->gen))
+					;
+				if ((*ptr)->CheckDone())
+					break;
+			}
+			syncPoint.arrive_and_wait();
+		}
+	};
+	std::vector<std::jthread> threads;
+	threads.reserve(this->ptrs.size());
+	for (auto& ptr : this->ptrs)
+		threads.emplace_back(task, &ptr);
+}
+auto Generator::Step() -> bool
+{
+	bool done{true};
+	for (auto& chunk : this->ptrs)
+	{
+		while (!chunk->Step(this->gen))
+			;
+		done &= chunk->CheckDone();
+	}
+	return done;
 }
 void Generator::ToTex()
 {

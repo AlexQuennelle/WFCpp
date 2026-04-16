@@ -20,6 +20,7 @@ Program::Program() : generator(64, 4)
 	rlImGuiSetup(true);
 	this->imguiIO = &ImGui::GetIO(); // NOLINT
 
+	this->generator.Run();
 	this->generator.ToTex();
 
 	imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -42,8 +43,8 @@ void Program::Update()
 	BeginDrawing();
 	rlImGuiBegin();
 
-	this->generator.Step();
-	this->generator.UpdateTex();
+	// this->generator.Step();
+	// this->generator.UpdateTex();
 	this->Draw();
 
 	rlImGuiEnd();
